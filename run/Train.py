@@ -1,7 +1,6 @@
 import os
 import cv2
 import sys
-import tqdm
 import torch
 import datetime
 
@@ -10,6 +9,7 @@ import torch.distributed as dist
 import torch.cuda as cuda
 import ray
 
+from ray.experimental import tqdm_ray as tqdm
 from torch.utils.data.dataloader import DataLoader
 from torch.optim import Adam, SGD
 from torch.utils.data.distributed import DistributedSampler
@@ -104,13 +104,13 @@ def train(config):
         
     epoch_iter = range(start, opt.Train.Scheduler.epoch + 1)
     if args.local_rank <= 0 and args.verbose is True:
-        epoch_iter = tqdm.tqdm(epoch_iter, desc='Epoch', total=opt.Train.Scheduler.epoch, initial=start - 1,
-                                position=0, bar_format='{desc:<5.5}{percentage:3.0f}%|{bar:40}{r_bar}')
+        epoch_iter = tqdm.tqdm(epoch_iter, desc='Epoch', total=opt.Train.Scheduler.epoch,
+                                position=0)
 
     for epoch in epoch_iter:
         if args.local_rank <= 0 and args.verbose is True:
             step_iter = tqdm.tqdm(enumerate(train_loader, start=1), desc='Iter', total=len(
-                train_loader), position=1, leave=False, bar_format='{desc:<5.5}{percentage:3.0f}%|{bar:40}{r_bar}')
+                train_loader), position=1)
 
         else:
             step_iter = enumerate(train_loader, start=1)
@@ -131,7 +131,7 @@ def train(config):
 
             loss = out['loss'].item()
             if args.local_rank <= 0 and args.verbose is True:
-                step_iter.set_postfix({'loss': loss})
+                tqdm.safe_print({'loss': loss})
 
         if args.local_rank <= 0:
             os.makedirs(opt.Train.Checkpoint.checkpoint_dir, exist_ok=True)

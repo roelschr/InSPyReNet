@@ -8,7 +8,7 @@ Model:
 Train:
     Dataset:
         type: "RGB_Dataset"
-        root: "data"
+        root: "/mnt/cluster_storage/inspyrenet/data/"
         sets: [
                'Train_Dataset/DUTS-TR', 
                'Train_Dataset/HRSOD-TR', 
@@ -72,7 +72,7 @@ Train:
 Test:
     Dataset:
         type: "RGB_Dataset"
-        root: "data/Test_Dataset"
+        root: "/mnt/cluster_storage/inspyrenet/data/Test_Dataset"
         sets:  ['DUTS-TE', 'DUT-OMRON', 'ECSSD', 'HKU-IS', 'PASCAL-S', 'DAVIS-S', 'HRSOD-TE', 'UHRSD-TE']
         transforms:
             # static_resize: 
@@ -91,7 +91,7 @@ Test:
         checkpoint_dir: "snapshots/Plus_Ultra"
 
 Eval:
-    gt_root: "data/Test_Dataset"
+    gt_root: "/mnt/cluster_storage/inspyrenet/data/Test_Dataset"
     pred_root: "snapshots/Plus_Ultra"
     result_path: "results"
     datasets: ['DUTS-TE', 'DUT-OMRON', 'ECSSD', 'HKU-IS', 'PASCAL-S', 'DAVIS-S', 'HRSOD-TE', 'UHRSD-TE']

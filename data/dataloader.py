@@ -73,6 +73,48 @@ class RGB_Dataset(Dataset):
 
     def __len__(self):
         return self.size
+
+# THIS ray.data Dataset OOMs
+# def ray_rgb_dataset(root, sets, tfs):
+#     # Assuming get_transform is a function that returns a Ray-compatible transform
+#     transform = get_transform(tfs)
+
+#     def preprocess(paths):
+#         images = []
+#         gts = []
+#         names = []
+#         shapes = []
+#         for img_path, gt_path in paths["item"]:
+#             # Load image and mask, apply transformations if needed
+#             img, gt = Image.open(img_path).convert('RGB'), Image.open(gt_path).convert('L')
+#             if img.size == gt.size:  # Ensure the image and mask sizes match
+#                 sample = {'image': img, 'gt': gt, 'name': os.path.splitext(os.path.basename(img_path))[0], 'shape': img.size}
+#                 if transform:
+#                     sample = transform(sample)
+#                 images.append(sample["image"])
+#                 gts.append(sample["gt"])
+#                 names.append(sample["name"])
+#                 shapes.append(sample["shape"])
+#         return {"image": images, "gt": gts, "name": names, "shapes": shapes}
+
+#     image_mask_pairs = []
+#     for set in sets:
+#         image_root, gt_root = os.path.join(root, set, 'images'), os.path.join(root, set, 'masks')
+#         images = sorted([os.path.join(image_root, f) for f in os.listdir(image_root) if f.lower().endswith(('.jpg', '.png'))])
+#         gts = sorted([os.path.join(gt_root, f) for f in os.listdir(gt_root) if f.lower().endswith(('.jpg', '.png'))])
+#         image_mask_pairs.extend(zip(images, gts))
+    
+#     # Create a Ray Dataset from the image-mask pairs
+#     ds = ray.data.from_items(image_mask_pairs)
+
+#     # Preprocess images and gts in parallel using Ray Dataset's map_batches
+#     ds = ds.map_batches(preprocess, batch_size=1, zero_copy_batch=True)
+
+#     return ds
+
+# def dataset_size(root, sets, tfs):
+#     return RGB_Dataset(root, sets, tfs).size
+
     
 class ImageLoader:
     def __init__(self, root, tfs):

@@ -1,10 +1,8 @@
-import torch.cuda as cuda
-
 from utils.misc import *
 from run import *
 import ray
 from ray.train.torch import TorchTrainer
-from ray.train import ScalingConfig
+from ray.train import ScalingConfig, RunConfig
 
 if __name__ == "__main__":
     args = parse_args()
@@ -15,11 +13,16 @@ if __name__ == "__main__":
             "pip": "requirements.txt",
         },
     )
-    scaling_config = ScalingConfig(num_workers=4, use_gpu=True)
+ 
+    scaling_config = ScalingConfig(num_workers=opt.Train.get("Workers", 2), use_gpu=True)
+
+    run_config = RunConfig(storage_path="/mnt/cluster_storage/insyprenet/training", name="ray-train-inspyrenet")
+
     trainer = TorchTrainer(
         train,
         train_loop_config={"args": args, "opt": opt},
-        scaling_config=scaling_config
+        scaling_config=scaling_config,
+        run_config=run_config
     )
     result = trainer.fit()
 

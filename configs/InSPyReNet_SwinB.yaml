@@ -48,6 +48,7 @@ Train:
         checkpoint_dir: "/mnt/cluster_storage/inspyrenet/snapshots/InSPyReNet_SwinB"
     Debug:
         keys: ['saliency', 'laplacian']
+    Workers: 4
     
 Test:
     Dataset:

@@ -1,14 +1,15 @@
 import os
 import cv2
 import sys
-import tqdm
 import torch
 import datetime
 
 import torch.nn as nn
 import torch.distributed as dist
 import torch.cuda as cuda
+import ray
 
+from ray.experimental import tqdm_ray as tqdm
 from torch.utils.data.dataloader import DataLoader
 from torch.optim import Adam, SGD
 from torch.utils.data.distributed import DistributedSampler
@@ -27,27 +28,26 @@ from utils.misc import *
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
-def train(opt, args):
+def train(config):
+    opt = config["opt"]
+    args = config["args"]
+
+    # dataset
+    print("HERE: ", os.listdir(opt.Train.Dataset.root), os.path.abspath(os.curdir))
     train_dataset = eval(opt.Train.Dataset.type)(
         root=opt.Train.Dataset.root, 
         sets=opt.Train.Dataset.sets,
         tfs=opt.Train.Dataset.transforms)
 
-    if args.device_num > 1:
-        cuda.set_device(args.local_rank)
-        dist.init_process_group(backend='nccl', rank=args.local_rank, world_size=args.device_num, timeout=datetime.timedelta(seconds=3600))
-        train_sampler = DistributedSampler(train_dataset, shuffle=True)
-    else:
-        train_sampler = None
-
     train_loader = DataLoader(dataset=train_dataset,
                             batch_size=opt.Train.Dataloader.batch_size,
-                            shuffle=train_sampler is None,
-                            sampler=train_sampler,
                             num_workers=opt.Train.Dataloader.num_workers,
                             pin_memory=opt.Train.Dataloader.pin_memory,
                             drop_last=True)
 
+    train_loader = ray.train.torch.prepare_data_loader(train_loader)    
+
+    # model
     model_ckpt = None
     state_ckpt = None
     
@@ -64,13 +64,6 @@ def train(opt, args):
     model = eval(opt.Model.name)(**opt.Model)
     if model_ckpt is not None:
         model.load_state_dict(model_ckpt)
-
-    if args.device_num > 1:
-        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        model = model.cuda()
-        model = nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
-    else:
-        model = model.cuda()
 
     backbone_params = nn.ParameterList()
     decoder_params = nn.ParameterList()
@@ -103,6 +96,7 @@ def train(opt, args):
         scheduler.load_state_dict(state_ckpt['scheduler'])
 
     model.train()
+    model = ray.train.torch.prepare_model(model)
 
     start = 1
     if state_ckpt is not None:
@@ -110,38 +104,34 @@ def train(opt, args):
         
     epoch_iter = range(start, opt.Train.Scheduler.epoch + 1)
     if args.local_rank <= 0 and args.verbose is True:
-        epoch_iter = tqdm.tqdm(epoch_iter, desc='Epoch', total=opt.Train.Scheduler.epoch, initial=start - 1,
-                                position=0, bar_format='{desc:<5.5}{percentage:3.0f}%|{bar:40}{r_bar}')
+        epoch_iter = tqdm.tqdm(epoch_iter, desc='Epoch', total=opt.Train.Scheduler.epoch,
+                                position=0)
 
     for epoch in epoch_iter:
         if args.local_rank <= 0 and args.verbose is True:
             step_iter = tqdm.tqdm(enumerate(train_loader, start=1), desc='Iter', total=len(
-                train_loader), position=1, leave=False, bar_format='{desc:<5.5}{percentage:3.0f}%|{bar:40}{r_bar}')
-            if args.device_num > 1 and train_sampler is not None:
-                train_sampler.set_epoch(epoch)
+                train_loader), position=1)
+
         else:
             step_iter = enumerate(train_loader, start=1)
-
+        loss = -1
         for i, sample in step_iter:
             optimizer.zero_grad()
             if opt.Train.Optimizer.mixed_precision is True and scaler is not None:
-                with autocast():
-                    sample = to_cuda(sample)
-                    out = model(sample)
-
+                out = model(sample)
                 scaler.scale(out['loss']).backward()
                 scaler.step(optimizer)
                 scaler.update()
                 scheduler.step()
             else:
-                sample = to_cuda(sample)
                 out = model(sample)
                 out['loss'].backward()
                 optimizer.step()
                 scheduler.step()
 
+            loss = out['loss'].item()
             if args.local_rank <= 0 and args.verbose is True:
-                step_iter.set_postfix({'loss': out['loss'].item()})
+                tqdm.safe_print({'loss': loss})
 
         if args.local_rank <= 0:
             os.makedirs(opt.Train.Checkpoint.checkpoint_dir, exist_ok=True)
@@ -159,7 +149,12 @@ def train(opt, args):
                 
                 torch.save(model_ckpt, os.path.join(opt.Train.Checkpoint.checkpoint_dir, 'latest.pth'))
                 torch.save(state_ckpt, os.path.join(opt.Train.Checkpoint.checkpoint_dir,  'state.pth'))
-                
+
+                metrics = {"loss": loss, "epoch": epoch}
+                ray.train.report(
+                    metrics,
+                    checkpoint=ray.train.Checkpoint.from_directory(opt.Train.Checkpoint.checkpoint_dir),
+                )
             if args.debug is True:
                 debout = debug_tile(sum([out[k] for k in opt.Train.Debug.keys], []), activation=torch.sigmoid)
                 cv2.imwrite(os.path.join(opt.Train.Checkpoint.checkpoint_dir, 'debug', str(epoch) + '.png'), debout)

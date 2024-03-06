@@ -45,7 +45,7 @@ def train(config):
                             pin_memory=opt.Train.Dataloader.pin_memory,
                             drop_last=True)
 
-    ray.train.torch.prepare_data_loader(train_loader)    
+    train_loader = ray.train.torch.prepare_data_loader(train_loader)    
 
     # model
     model_ckpt = None
